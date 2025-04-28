@@ -20,9 +20,9 @@
 
 import numpy as np
 from typing import Any
-from sai.stats.features import calc_u, calc_q
+from sai.stats.features import calc_u, calc_q, calc_fd, calc_df
 from sai.utils.preprocessors import DataPreprocessor
-
+import re
 
 class FeaturePreprocessor(DataPreprocessor):
     """
@@ -42,46 +42,31 @@ class FeaturePreprocessor(DataPreprocessor):
         anc_allele_available: bool = False,
     ):
         """
-        Initializes FeatureVectorsPreprocessor with specific frequency thresholds
-        and output file for storing generated feature vectors.
+        Construct the FeaturePreprocessor.
 
-        Parameters
-        ----------
-        w : float
-            Frequency threshold for `calc_u` and `calc_q`.
-        y : list[float]
-            List of frequency thresholds for `calc_u` and `calc_q`.
-        output_file : str
-            Path to the output file to save processed feature vectors.
-        stat_type: str,
-            Specifies the type of statistic to compute.
-            - "UXX" (e.g., "U50", "U90") : Compute the U statistic using `calc_u()`.
-            - "QXX" (e.g., "Q95", "Q50") : Compute the Q statistic using `calc_q()`,
-        anc_allele_available: bool, optional
-            If True, ancestral allele information is available.
-            If False, ancestral allele information is unavailable.
-            Default is False.
-
-        Raises
-        ------
-        ValueError
-            If `stat_type` is not in a valid format. Must be either: 'UXX' or 'QXX'.
+        See full docstring in source for parameter details.
         """
+        # ---------- basic attributes ----------
         self.w = w
         self.y = y
         self.output_file = output_file
         self.anc_allele_available = anc_allele_available
-        if not (
-            len(stat_type) == 3
-            and stat_type[0] in {"U", "Q"}
-            and stat_type[1:].isdigit()
-        ):
-            raise ValueError(
-                f"Invalid stat_type format: {stat_type}. Expected format 'UXX' or 'QXX' (e.g., 'U50' or 'Q95')."
-            )
-        self.stat_prefix = stat_type[0]
-        self.threshold = int(stat_type[1:]) / 100
+        self.stat_type = stat_type
+        self.stat_prefix = stat_type[0]        # first letter
 
+        # ---------- validate stat_type ----------
+        if not (re.fullmatch(r"[UQ]\d{2}", stat_type) or stat_type in {"fd", "df"}):
+            raise ValueError(
+                f"Invalid stat_type: {stat_type}. "
+                "Allowed: 'UXX', 'QXX', 'fd', or 'df'."
+            )
+
+        # ---------- threshold only for U / Q ----------
+        if self.stat_prefix in {"U", "Q"}:
+            # 'U50' -> 0.50 ; 'Q95' -> 0.95
+            self.threshold = int(stat_type[1:]) / 100
+        else:                                   # fd or df
+            self.threshold = None
     def run(
         self,
         chr_name: str,
@@ -146,6 +131,24 @@ class FeaturePreprocessor(DataPreprocessor):
             or (ploidy is None)
         ):
             items["statistic"] = np.nan
+            items["candidates"] = np.array([])
+        elif self.stat_type == "fd":
+            # f_d hesapla
+            items["statistic"] = calc_fd(
+                ref_gts=ref_gts,
+                tgt_gts=tgt_gts,
+                src_gts=src_gts_list[0],
+                ploidy=ploidy,
+            )
+            items["candidates"] = np.array([])
+        elif self.stat_type == "df":
+            # d_f hesapla
+            items["statistic"] = calc_df(
+                ref_gts=ref_gts,
+                tgt_gts=tgt_gts,
+                src_gts=src_gts_list[0],
+                ploidy=ploidy,
+            )
             items["candidates"] = np.array([])
         elif self.stat_prefix == "U":
             items["statistic"], items["candidates"] = calc_u(

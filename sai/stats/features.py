@@ -20,6 +20,40 @@
 
 import numpy as np
 
+def calc_fd(ref_gts: np.ndarray,
+            tgt_gts: np.ndarray,
+            src_gts: np.ndarray,
+            ploidy: int = 1) -> float:
+    """
+    f_d statistic: introgression fraction from src (P3) into tgt (P2).
+    """
+    p1 = calc_freq(ref_gts, ploidy)
+    p2 = calc_freq(tgt_gts, ploidy)
+    p3 = calc_freq(src_gts, ploidy)
+    d13 = p1*(1-p3) + (1-p1)*p3
+    d23 = p2*(1-p3) + (1-p2)*p3
+    num = np.sum(p2*d13 - p1*d23)
+    pD = np.maximum(p2, p3)
+    piD = 2 * pD * (1-pD)
+    denom = np.sum(pD*d13 - p1*piD)
+    return num/denom if denom != 0 else np.nan
+
+def calc_df(ref_gts: np.ndarray,
+            tgt_gts: np.ndarray,
+            src_gts: np.ndarray,
+            ploidy: int = 1) -> float:
+    """
+    Distance fraction (d_f): symmetric estimator of introgression.
+    """
+    p1 = calc_freq(ref_gts, ploidy)
+    p2 = calc_freq(tgt_gts, ploidy)
+    p3 = calc_freq(src_gts, ploidy)
+    d13 = p1*(1-p3) + (1-p1)*p3
+    d23 = p2*(1-p3) + (1-p2)*p3
+    num = np.sum(p2*d13 - p1*d23)
+    denom = np.sum(p2*d13 + p1*d23)
+    return num/denom if denom != 0 else np.nan
+
 
 def calc_freq(gts: np.ndarray, ploidy: int = 1) -> np.ndarray:
     """
