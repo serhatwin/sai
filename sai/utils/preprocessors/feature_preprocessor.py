@@ -20,9 +20,8 @@
 
 import numpy as np
 from typing import Any
-from sai.stats.features import calc_u, calc_q
+from sai.stats.features import calc_u, calc_q, calc_fd, calc_df
 from sai.utils.preprocessors import DataPreprocessor
-
 
 class FeaturePreprocessor(DataPreprocessor):
     """
@@ -72,16 +71,19 @@ class FeaturePreprocessor(DataPreprocessor):
         self.output_file = output_file
         self.anc_allele_available = anc_allele_available
         if not (
-            len(stat_type) == 3
-            and stat_type[0] in {"U", "Q"}
-            and stat_type[1:].isdigit()
+            (len(stat_type) == 3 and stat_type[0] in {"U", "Q"} and stat_type[1:].isdigit())
+            or (stat_type in ["fd", "df"])
         ):
             raise ValueError(
-                f"Invalid stat_type format: {stat_type}. Expected format 'UXX' or 'QXX' (e.g., 'U50' or 'Q95')."
-            )
-        self.stat_prefix = stat_type[0]
-        self.threshold = int(stat_type[1:]) / 100
-
+                f"Invalid stat_type format: {stat_type}. Expected format 'UXX', 'QXX', 'fd', or 'df' (e.g., 'U50', 'Q95')."
+        )
+        self.stat_type = stat_type.lower()
+        if self.stat_type in ["fd", "df"]:
+            self.stat_prefix = self.stat_type
+            self.threshold = None
+        else:
+            self.stat_prefix = stat_type[0].upper()
+            self.threshold = int(stat_type[1:]) / 100
     def run(
         self,
         chr_name: str,
@@ -171,11 +173,35 @@ class FeaturePreprocessor(DataPreprocessor):
                 ploidy=ploidy,
                 anc_allele_available=self.anc_allele_available,
             )
+        elif self.stat_prefix == "fd":
+            print("calc_fd() calculating... :", start, end)
+            fd_value, fd_positions = calc_fd(
+                ref_gts=ref_gts,
+                tgt_gts=tgt_gts,
+                src_gts_list=src_gts_list,
+                pos=pos,
+                ploidy=ploidy,
+                anc_allele_available=self.anc_allele_available,
+            )
+            items["statistic"] = fd_value
+            items["candidates"] = fd_positions
+
+        elif self.stat_prefix == "df":
+            df_value, df_positions = calc_df(
+                ref_gts=ref_gts,
+                tgt_gts=tgt_gts,
+                src_gts_list=src_gts_list,
+                pos=pos,
+                ploidy=ploidy,
+                anc_allele_available=self.anc_allele_available,
+            )
+            items["statistic"] = df_value
+            items["candidates"] = df_positions
+
         else:
             raise ValueError(
-                f"Invalid stat_type: {self.stat_type}. Must be 'U' or 'QXX' (e.g., 'Q95')."
-            )
-
+                f"Invalid stat_type: {self.stat_type}. Must be 'U', 'QXX', 'fd', or 'df' (e.g., 'Q95')."
+    )
         return [items]
 
     def process_items(self, items: list[dict[str, Any]]) -> None:
@@ -187,6 +213,7 @@ class FeaturePreprocessor(DataPreprocessor):
         items : dict[str, Any]
             A dictionary containing feature vectors for a genomic window.
         """
+        print(f"Writing {len(items)} items to {self.output_file}")
         with open(
             self.output_file, "a"
         ) as f:  # Open in append mode for continuous writing
